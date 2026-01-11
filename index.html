@@ -3,346 +3,1015 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>MTG 複合フォーマット マッチングツール</title>
+    <title>MTG Tournament Manager</title>
+
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+
     <style>
-        body { font-family: "Helvetica Neue", Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; background-color: #f4f4f4; color: #333; }
-        h1, h2 { text-align: center; color: #2c3e50; }
-        .container { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
-        
-        /* Setup Phase */
-        .player-input { margin-bottom: 10px; display: flex; gap: 10px; flex-wrap: wrap; }
-        .player-input input { padding: 8px; flex: 1; border: 1px solid #ddd; border-radius: 4px; }
-        
-        /* Button Styles */
-        button { background-color: #e67e22; color: white; border: none; padding: 10px 20px; border-radius: 5px; cursor: pointer; font-size: 16px; width: 100%; margin-top: 10px; }
-        button:hover { background-color: #d35400; }
-        button:disabled { background-color: #ccc; cursor: not-allowed; }
-
-        /* Match Styles */
-        .match-card { background: #ecf0f1; border-left: 5px solid #3498db; padding: 10px; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center; }
-        .match-info { font-weight: bold; }
-        .vs { margin: 0 10px; color: #7f8c8d; font-size: 0.9em; }
-        .result-btns { display: flex; gap: 5px; }
-        .result-btns button { width: auto; font-size: 12px; padding: 5px 10px; margin: 0; }
-        .p1-win { background-color: #3498db; }
-        .p2-win { background-color: #e74c3c; }
-        .draw { background-color: #95a5a6; }
-        
-        /* Table Styles */
-        table { width: 100%; border-collapse: collapse; margin-top: 10px; }
-        th, td { border: 1px solid #ddd; padding: 8px; text-align: center; }
-        th { background-color: #2c3e50; color: white; }
-        tr:nth-child(even) { background-color: #f9f9f9; }
-
-        .hidden { display: none; }
-        .format-badge { display: inline-block; padding: 5px 10px; background: #8e44ad; color: white; border-radius: 15px; font-size: 0.9em; margin-bottom: 15px; }
-        .pod-label { font-size: 0.8em; color: white; padding: 2px 6px; border-radius: 4px; margin-left: 5px; }
-        .pod-a { background-color: #2980b9; }
-        .pod-b { background-color: #c0392b; }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+        }
+        .seat-node { transition: all 0.3s ease; }
+        .seat-node:hover { transform: scale(1.15); z-index: 20; cursor: pointer; }
     </style>
 </head>
 <body>
+    <div id="root"></div>
 
-<div class="container" id="setupSection">
-    <h1>トーナメント参加登録</h1>
-    <p>参加者16名の名前を入力してください。</p>
-    <div id="playerInputs"></div>
-    <button onclick="startTournament()">トーナメント開始</button>
-</div>
+    <script type="text/babel">
+        const { useState, useMemo, useEffect } = React;
 
-<div class="container hidden" id="tournamentSection">
-    <h2 id="roundTitle">Round 1</h2>
-    <div style="text-align: center;">
-        <span id="currentFormat" class="format-badge">Draft</span>
-    </div>
-    
-    <div id="pairingsList"></div>
-    <button id="nextRoundBtn" onclick="nextRound()" disabled>全結果を入力してください</button>
+        // --- 初期設定 ---
+        const INITIAL_PLAYER_COUNT = 16;
+        const DEFAULT_PLAYERS = Array.from({ length: INITIAL_PLAYER_COUNT }, (_, i) => ({ id: i, name: `Player ${i + 1}` }));
+        const FORMAT_DEFINITIONS = {
+            'Draft': { name: 'ドラフト', rounds: 3 },
+            'Standard': { name: 'スタンダード', rounds: 2 },
+            'Pioneer': { name: 'パイオニア', rounds: 2 },
+            'Modern': { name: 'モダン', rounds: 2 }
+        };
 
-    <div style="margin-top: 30px;">
-        <h3>現在の順位表</h3>
-        <table id="standingsTable">
-            <thead>
-                <tr>
-                    <th>順位</th>
-                    <th>名前</th>
-                    <th>点</th>
-                    <th>OMW%</th>
-                    <th>Pod</th>
-                </tr>
-            </thead>
-            <tbody></tbody>
-        </table>
-    </div>
-</div>
+        // --- ユーティリティ関数 ---
 
-<script>
-    // --- Configuration ---
-    const TOTAL_PLAYERS = 16;
-    const ROUND_STRUCTURE = [
-        { num: 1, format: "Draft (Pod内対戦)" },
-        { num: 2, format: "Draft (Pod内対戦)" },
-        { num: 3, format: "Draft (Pod内対戦)" },
-        { num: 4, format: "Standard" },
-        { num: 5, format: "Standard" },
-        { num: 6, format: "Pioneer" },
-        { num: 7, format: "Pioneer" },
-        { num: 8, format: "Modern" },
-        { num: 9, format: "Modern" }
-    ];
+        // 順位計算ロジック
+        const calculateStandings = (players, matches) => {
+            const stats = {};
 
-    // --- State ---
-    let players = [];
-    let currentRoundIndex = 0;
-    let matches = []; // { p1: id, p2: id, result: null|1|2|0 } 1=p1win, 2=p2win, 0=draw
-
-    // --- Initialization ---
-    window.onload = function() {
-        const inputContainer = document.getElementById('playerInputs');
-        for (let i = 0; i < TOTAL_PLAYERS; i++) {
-            const div = document.createElement('div');
-            div.className = 'player-input';
-            div.innerHTML = `<input type="text" id="p${i}" value="Player ${i+1}" placeholder="Player Name">`;
-            inputContainer.appendChild(div);
-        }
-    };
-
-    class Player {
-        constructor(id, name) {
-            this.id = id;
-            this.name = name;
-            this.points = 0;
-            this.opponents = []; // List of IDs played against
-            this.pod = ''; // 'A' or 'B'
-            this.wins = 0;
-            this.losses = 0;
-            this.draws = 0;
-        }
-    }
-
-    function startTournament() {
-        // Create Players
-        for (let i = 0; i < TOTAL_PLAYERS; i++) {
-            const name = document.getElementById(`p${i}`).value || `Player ${i+1}`;
-            const p = new Player(i, name);
-            // Randomly assign pods (First 8 A, Next 8 B) - In reality, usually based on seating, but here we split simple
-            // To make it truly random shuffle could be added, but here input order 1-8=A, 9-16=B
-            p.pod = i < 8 ? 'A' : 'B';
-            players.push(p);
-        }
-
-        document.getElementById('setupSection').classList.add('hidden');
-        document.getElementById('tournamentSection').classList.remove('hidden');
-        
-        generatePairings();
-        updateUI();
-    }
-
-    function generatePairings() {
-        matches = [];
-        const isDraft = currentRoundIndex < 3;
-        
-        // Sort players by points for pairing logic
-        // Simple Swiss logic: Sort by Points -> Random
-        // NOTE: Does not implement complex OMW% pairing lookahead, keeps it simple for browser JS
-        
-        let pool = [...players];
-
-        // Shuffle within same point groups to randomize pairs slightly
-        pool.sort(() => Math.random() - 0.5);
-        pool.sort((a, b) => b.points - a.points);
-
-        if (isDraft) {
-            // Split into Pods
-            const podA = pool.filter(p => p.pod === 'A');
-            const podB = pool.filter(p => p.pod === 'B');
-            
-            pairSwissGroup(podA);
-            pairSwissGroup(podB);
-        } else {
-            // Global Swiss
-            pairSwissGroup(pool);
-        }
-    }
-
-    function pairSwissGroup(group) {
-        // specific simple pairing logic
-        // Try to pair p1 with p2 if not played. If played, try p3...
-        // Fallback: Pair neighbors in sorted list even if played (rematch) to prevent infinite loops in simple script
-        
-        let unpaired = [...group];
-        
-        while (unpaired.length > 1) {
-            let p1 = unpaired.shift();
-            let p2Index = -1;
-
-            // Find first valid opponent
-            for (let i = 0; i < unpaired.length; i++) {
-                if (!p1.opponents.includes(unpaired[i].id)) {
-                    p2Index = i;
-                    break;
-                }
-            }
-
-            // If everyone played, just take the top one (Rematch fallback)
-            if (p2Index === -1) {
-                p2Index = 0;
-            }
-
-            let p2 = unpaired.splice(p2Index, 1)[0];
-            matches.push({ p1: p1.id, p2: p2.id, result: null });
-        }
-        
-        if (unpaired.length === 1) {
-            // Bye (Not possible with 16 players unless drop, handling just in case)
-            // console.log("Bye for", unpaired[0].name);
-            // Auto win for bye could be added here
-        }
-    }
-
-    function updateUI() {
-        const roundData = ROUND_STRUCTURE[currentRoundIndex];
-        document.getElementById('roundTitle').innerText = `Round ${roundData.num}`;
-        document.getElementById('currentFormat').innerText = roundData.format;
-        
-        const list = document.getElementById('pairingsList');
-        list.innerHTML = '';
-
-        matches.forEach((m, idx) => {
-            const p1 = players.find(p => p.id === m.p1);
-            const p2 = players.find(p => p.id === m.p2);
-            
-            const div = document.createElement('div');
-            div.className = 'match-card';
-            
-            let status = '';
-            if (m.result === 1) status = ` - ${p1.name} Win`;
-            else if (m.result === 2) status = ` - ${p2.name} Win`;
-            else if (m.result === 0) status = ` - Draw`;
-
-            // Pod badge for draft rounds
-            let podBadge = '';
-            if (currentRoundIndex < 3) {
-                podBadge = `<span class="pod-label ${p1.pod === 'A' ? 'pod-a' : 'pod-b'}">Pod ${p1.pod}</span>`;
-            }
-
-            div.innerHTML = `
-                <div class="match-info">
-                    ${podBadge} Table ${idx+1}: ${p1.name} <span class="vs">vs</span> ${p2.name}
-                    <span style="font-weight:normal; color:#666;">${status}</span>
-                </div>
-                <div class="result-btns">
-                    <button class="p1-win" onclick="setResult(${idx}, 1)">${p1.name} Win</button>
-                    <button class="p2-win" onclick="setResult(${idx}, 2)">${p2.name} Win</button>
-                    <button class="draw" onclick="setResult(${idx}, 0)">Draw</button>
-                </div>
-            `;
-            list.appendChild(div);
-        });
-
-        checkRoundComplete();
-        updateStandings();
-    }
-
-    function setResult(matchIdx, result) {
-        matches[matchIdx].result = result;
-        updateUI();
-    }
-
-    function checkRoundComplete() {
-        const allDone = matches.every(m => m.result !== null);
-        const btn = document.getElementById('nextRoundBtn');
-        btn.disabled = !allDone;
-        if (allDone) {
-            btn.innerText = (currentRoundIndex < ROUND_STRUCTURE.length - 1) ? "次のラウンドへ" : "大会終了 - 最終結果";
-        } else {
-            btn.innerText = "全結果を入力してください";
-        }
-    }
-
-    function nextRound() {
-        if (!confirm("ラウンドを終了して次へ進みますか？（修正できなくなります）")) return;
-
-        // Commit scores
-        matches.forEach(m => {
-            const p1 = players.find(p => p.id === m.p1);
-            const p2 = players.find(p => p.id === m.p2);
-            
-            // Record opponent
-            p1.opponents.push(p2.id);
-            p2.opponents.push(p1.id);
-
-            if (m.result === 1) { // P1 Win
-                p1.points += 3; p1.wins++;
-                p2.losses++;
-            } else if (m.result === 2) { // P2 Win
-                p2.points += 3; p2.wins++;
-                p1.losses++;
-            } else { // Draw
-                p1.points += 1; p1.draws++;
-                p2.points += 1; p2.draws++;
-            }
-        });
-
-        currentRoundIndex++;
-        
-        if (currentRoundIndex >= ROUND_STRUCTURE.length) {
-            alert("全ラウンド終了！お疲れ様でした。");
-            document.getElementById('pairingsList').innerHTML = '<div style="text-align:center; padding:20px;">全日程終了</div>';
-            document.getElementById('nextRoundBtn').style.display = 'none';
-            document.getElementById('currentFormat').style.display = 'none';
-            updateStandings();
-            return;
-        }
-
-        generatePairings();
-        updateUI();
-    }
-
-    function updateStandings() {
-        // Calculate basic OMW% (Average of Opponents' Win %)
-        // Win% = Points / (Rounds * 3). Minimum 0.33 usually used in official logic but simplistic here.
-        
-        const tbody = document.querySelector('#standingsTable tbody');
-        tbody.innerHTML = '';
-
-        // Recalculate OMW for display sorting
-        players.forEach(p => {
-            if (p.opponents.length === 0) {
-                p.omw = 0;
-                return;
-            }
-            let totalOpWinPct = 0;
-            p.opponents.forEach(opId => {
-                const op = players.find(x => x.id === opId);
-                // Simple Match Win Pct calculation
-                const rounds = op.wins + op.losses + op.draws;
-                const winPct = rounds > 0 ? op.points / (rounds * 3) : 0;
-                // MTG rule: minimum 0.33
-                totalOpWinPct += Math.max(winPct, 0.33);
+            players.forEach(p => {
+                stats[p.id] = {
+                    id: p.id,
+                    name: p.name,
+                    matchPoints: 0,
+                    gamesPlayed: 0,
+                    gamePoints: 0,
+                    opponents: [],
+                    omw: 0.33,
+                    gw: 0,
+                    ogw: 0.33
+                };
             });
-            p.omw = (totalOpWinPct / p.opponents.length).toFixed(4);
-        });
 
-        // Sort: Points > OMW% > Random(stable)
-        const sortedPlayers = [...players].sort((a, b) => {
-            if (b.points !== a.points) return b.points - a.points;
-            return b.omw - a.omw;
-        });
+            matches.forEach(m => {
+                if (!m.completed) return;
+                const p1 = stats[m.p1Id];
+                const p2 = stats[m.p2Id];
+                if (!p1 || !p2) return;
 
-        sortedPlayers.forEach((p, index) => {
-            const tr = document.createElement('tr');
-            tr.innerHTML = `
-                <td>${index + 1}</td>
-                <td style="text-align:left; font-weight:bold;">${p.name}</td>
-                <td>${p.points}</td>
-                <td>${(p.omw * 100).toFixed(2)}%</td>
-                <td><span class="pod-label ${p.pod === 'A' ? 'pod-a' : 'pod-b'}">${p.pod}</span></td>
-            `;
-            tbody.appendChild(tr);
-        });
-    }
-</script>
+                let p1Res = 'draw', p2Res = 'draw';
+                if (m.p1Wins > m.p2Wins) { p1Res = 'win'; p2Res = 'loss'; }
+                else if (m.p2Wins > m.p1Wins) { p1Res = 'loss'; p2Res = 'win'; }
 
+                if (p1Res === 'win') { p1.matchPoints += 3; p2.matchPoints += 0; }
+                else if (p2Res === 'win') { p2.matchPoints += 3; p1.matchPoints += 0; }
+                else { p1.matchPoints += 1; p2.matchPoints += 1; }
+
+                const draws = m.draws || 0;
+                p1.gamePoints += (m.p1Wins * 3) + (draws * 1);
+                p2.gamePoints += (m.p2Wins * 3) + (draws * 1);
+
+                const totalGames = m.p1Wins + m.p2Wins + draws;
+                p1.gamesPlayed += totalGames;
+                p2.gamesPlayed += totalGames;
+
+                p1.opponents.push(m.p2Id);
+                p2.opponents.push(m.p1Id);
+            });
+
+            const playerIds = Object.keys(stats);
+
+            playerIds.forEach(pid => {
+                const s = stats[pid];
+                if (s.gamesPlayed > 0) {
+                    s.gw = s.gamePoints / (s.gamesPlayed * 3);
+                } else {
+                    s.gw = 0;
+                }
+            });
+
+            playerIds.forEach(pid => {
+                const s = stats[pid];
+                if (s.opponents.length > 0) {
+                    let sum = 0;
+                    s.opponents.forEach(oid => {
+                        const opp = stats[oid];
+                        const oppMaxMatchPoints = Math.max(1, opp.opponents.length * 3);
+                        let mw = opp.matchPoints / oppMaxMatchPoints;
+                        if (mw < 0.33) mw = 0.33;
+                        sum += mw;
+                    });
+                    s.omw = sum / s.opponents.length;
+                }
+            });
+
+            playerIds.forEach(pid => {
+                const s = stats[pid];
+                if (s.opponents.length > 0) {
+                    let sum = 0;
+                    s.opponents.forEach(oid => {
+                        const opp = stats[oid];
+                        let gw = opp.gw;
+                        if (gw < 0.33) gw = 0.33;
+                        sum += gw;
+                    });
+                    s.ogw = sum / s.opponents.length;
+                }
+            });
+
+            return Object.values(stats).sort((a, b) => {
+                if (b.matchPoints !== a.matchPoints) return b.matchPoints - a.matchPoints;
+                if (b.omw !== a.omw) return b.omw - a.omw;
+                if (b.gw !== a.gw) return b.gw - a.gw;
+                return b.ogw - a.ogw;
+            });
+        };
+
+
+        // --- メインコンポーネント ---
+        const App = () => {
+            // State - すべてトップレベルで定義
+            const [view, setView] = useState('SETUP');
+            const [formatOrder, setFormatOrder] = useState(['Draft', 'Standard', 'Pioneer', 'Modern']);
+            const [players, setPlayers] = useState(DEFAULT_PLAYERS);
+            const [matches, setMatches] = useState([]);
+            const [currentRound, setCurrentRound] = useState(1);
+            const [draftPods, setDraftPods] = useState(null);
+            const [modalPlayer, setModalPlayer] = useState(null);
+            const [tournamentHistory, setTournamentHistory] = useState([]);
+            const [viewingHistory, setViewingHistory] = useState(null);
+            const [showHistoryModal, setShowHistoryModal] = useState(false);
+
+            // 起動時に履歴と進行中の大会を読み込み
+            useEffect(() => {
+                // 履歴を読み込み
+                const savedHistory = localStorage.getItem('mtgTournamentHistory');
+                if (savedHistory) {
+                    try {
+                        setTournamentHistory(JSON.parse(savedHistory));
+                    } catch (e) {
+                        console.error('Failed to load history:', e);
+                    }
+                }
+
+                // 進行中の大会を復元
+                const savedProgress = localStorage.getItem('mtgTournamentProgress');
+                if (savedProgress) {
+                    try {
+                        const progress = JSON.parse(savedProgress);
+                        setView(progress.view);
+                        setFormatOrder(progress.formatOrder);
+                        setPlayers(progress.players);
+                        setMatches(progress.matches);
+                        setCurrentRound(progress.currentRound);
+                        setDraftPods(progress.draftPods);
+                    } catch (e) {
+                        console.error('Failed to load progress:', e);
+                    }
+                }
+            }, []);
+
+            // 進行状況を保存する関数
+            const saveProgress = (updates = {}) => {
+                const currentState = {
+                    view: updates.view !== undefined ? updates.view : view,
+                    formatOrder: updates.formatOrder !== undefined ? updates.formatOrder : formatOrder,
+                    players: updates.players !== undefined ? updates.players : players,
+                    matches: updates.matches !== undefined ? updates.matches : matches,
+                    currentRound: updates.currentRound !== undefined ? updates.currentRound : currentRound,
+                    draftPods: updates.draftPods !== undefined ? updates.draftPods : draftPods,
+                };
+                localStorage.setItem('mtgTournamentProgress', JSON.stringify(currentState));
+            };
+
+            // 進行状況をクリア
+            const clearProgress = () => {
+                localStorage.removeItem('mtgTournamentProgress');
+            };
+
+            // スケジュール生成
+            const schedule = useMemo(() => {
+                let list = [];
+                let r = 1;
+                formatOrder.forEach(fmtKey => {
+                    const conf = FORMAT_DEFINITIONS[fmtKey];
+                    for(let i=0; i<conf.rounds; i++) {
+                        list.push({ globalRound: r++, format: fmtKey, subRound: i+1 });
+                    }
+                });
+                return list;
+            }, [formatOrder]);
+
+            const roundInfo = schedule.find(s => s.globalRound === currentRound);
+            const isFinished = !roundInfo;
+
+            // 現在の順位表
+            const standings = useMemo(() => calculateStandings(players, matches), [players, matches]);
+
+            // --- ロジック: ドラフトポッド生成 ---
+            const createDraftPods = () => {
+                let pool = [];
+                if (currentRound === 1) {
+                    pool = [...standings].sort(() => Math.random() - 0.5);
+                } else {
+                    pool = [...standings];
+                }
+
+                const podA = pool.slice(0, 8).map((p, i) => ({ ...p, seat: i + 1 }));
+                const podB = pool.slice(8, 16).map((p, i) => ({ ...p, seat: i + 1 }));
+
+                const newDraftPods = {
+                    round: currentRound,
+                    pods: [podA, podB]
+                };
+
+                setDraftPods(newDraftPods);
+                saveProgress({ draftPods: newDraftPods });
+            };
+
+            // --- ロジック: ペアリング生成 ---
+            const generatePairings = (forRound = null) => {
+                const targetRound = forRound || currentRound;
+                const targetRoundInfo = schedule.find(s => s.globalRound === targetRound);
+                if (!targetRoundInfo) return;
+
+                const { format, subRound } = targetRoundInfo;
+                let newMatches = [];
+
+                const makeMatch = (id1, id2) => ({
+                    id: `R${targetRound}-${id1}-${id2}-${Date.now()}`,
+                    globalRound: targetRound,
+                    format: format,
+                    p1Id: id1,
+                    p2Id: id2,
+                    p1Wins: 0, p2Wins: 0, draws: 0,
+                    completed: false
+                });
+
+                if (format === 'Draft') {
+                    // ドラフトセッションの開始ラウンドを計算（subRound 1のラウンド）
+                    const draftStartRound = targetRound - subRound + 1;
+
+                    // ポッドがない、または別のドラフトセッションのポッドの場合
+                    if (!draftPods || draftPods.round !== draftStartRound) {
+                        if (subRound === 1) {
+                            // subRound 1なら新しいポッドを作成
+                            createDraftPods();
+                            return;
+                        } else {
+                            // subRound 2, 3でポッドがない場合はエラー
+                            console.error('Draft pods not found for subRound > 1');
+                            return;
+                        }
+                    }
+
+                    const { pods } = draftPods;
+
+                    pods.forEach(pod => {
+                        const getWinnerLoser = (seatA, seatB, searchRound) => {
+                            const pA = pod.find(p => p.seat === seatA);
+                            const pB = pod.find(p => p.seat === seatB);
+                            if(!pA || !pB) return { winner: 0, loser: 0 };
+
+                            const m = matches.find(m =>
+                                m.globalRound === searchRound &&
+                                ((m.p1Id === pA.id && m.p2Id === pB.id) || (m.p1Id === pB.id && m.p2Id === pA.id))
+                            );
+
+                            let winner = pA.id, loser = pB.id;
+                            if (m && m.completed) {
+                                if (m.p1Wins >= m.p2Wins) { winner = m.p1Id; loser = m.p2Id; }
+                                else { winner = m.p2Id; loser = m.p1Id; }
+                            }
+                            return { winner, loser };
+                        };
+
+                        if (subRound === 1) {
+                            newMatches.push(makeMatch(pod.find(p=>p.seat===1).id, pod.find(p=>p.seat===5).id));
+                            newMatches.push(makeMatch(pod.find(p=>p.seat===2).id, pod.find(p=>p.seat===6).id));
+                            newMatches.push(makeMatch(pod.find(p=>p.seat===3).id, pod.find(p=>p.seat===7).id));
+                            newMatches.push(makeMatch(pod.find(p=>p.seat===4).id, pod.find(p=>p.seat===8).id));
+                        } else if (subRound === 2) {
+                            const prevR = targetRound - 1;
+                            const r1_1 = getWinnerLoser(1, 5, prevR);
+                            const r1_2 = getWinnerLoser(3, 7, prevR);
+                            const r1_3 = getWinnerLoser(2, 6, prevR);
+                            const r1_4 = getWinnerLoser(4, 8, prevR);
+
+                            newMatches.push(makeMatch(r1_1.winner, r1_2.winner));
+                            newMatches.push(makeMatch(r1_3.winner, r1_4.winner));
+                            newMatches.push(makeMatch(r1_1.loser, r1_2.loser));
+                            newMatches.push(makeMatch(r1_3.loser, r1_4.loser));
+                        } else if (subRound === 3) {
+                            const r1Global = targetRound - 2;
+                            const r2Global = targetRound - 1;
+
+                            const r1_1 = getWinnerLoser(1, 5, r1Global);
+                            const r1_2 = getWinnerLoser(3, 7, r1Global);
+                            const r1_3 = getWinnerLoser(2, 6, r1Global);
+                            const r1_4 = getWinnerLoser(4, 8, r1Global);
+
+                            const getR2Result = (id1, id2) => {
+                                const m = matches.find(m => m.globalRound === r2Global && ((m.p1Id === id1 && m.p2Id === id2) || (m.p1Id === id2 && m.p2Id === id1)));
+                                let winner = id1, loser = id2;
+                                if (m && m.completed) {
+                                    if (m.p1Wins >= m.p2Wins) { winner = m.p1Id; loser = m.p2Id; }
+                                    else { winner = m.p2Id; loser = m.p1Id; }
+                                }
+                                return { winner, loser };
+                            };
+
+                            const r2_topA = getR2Result(r1_1.winner, r1_2.winner);
+                            const r2_topB = getR2Result(r1_3.winner, r1_4.winner);
+                            const r2_botA = getR2Result(r1_1.loser, r1_2.loser);
+                            const r2_botB = getR2Result(r1_3.loser, r1_4.loser);
+
+                            newMatches.push(makeMatch(r2_topA.winner, r2_topB.winner));
+                            newMatches.push(makeMatch(r2_topA.loser, r2_topB.loser));
+                            newMatches.push(makeMatch(r2_botA.winner, r2_botB.winner));
+                            newMatches.push(makeMatch(r2_botA.loser, r2_botB.loser));
+                        }
+                    });
+
+                } else {
+                    let pool = [...standings];
+
+                    if (targetRound === 1) {
+                        pool.sort(() => Math.random() - 0.5);
+                    }
+
+                    const hasPlayedConstructed = (id1, id2) => {
+                        return matches.some(m =>
+                            m.completed && m.format !== 'Draft' &&
+                            ((m.p1Id === id1 && m.p2Id === id2) || (m.p1Id === id2 && m.p2Id === id1))
+                        );
+                    };
+
+                    while (pool.length >= 2) {
+                        const p1 = pool.shift();
+                        let pairedIdx = -1;
+
+                        for (let i = 0; i < pool.length; i++) {
+                            const p2 = pool[i];
+                            if (targetRound > 1) {
+                                if (!hasPlayedConstructed(p1.id, p2.id)) {
+                                    pairedIdx = i;
+                                    break;
+                                }
+                            } else {
+                                pairedIdx = i;
+                                break;
+                            }
+                        }
+
+                        if (pairedIdx === -1) pairedIdx = 0;
+
+                        const p2 = pool.splice(pairedIdx, 1)[0];
+                        newMatches.push(makeMatch(p1.id, p2.id));
+                    }
+                }
+
+                setMatches(prev => {
+                    const updatedMatches = [...prev, ...newMatches];
+                    saveProgress({ matches: updatedMatches });
+                    return updatedMatches;
+                });
+            };
+
+            // --- 画面遷移ハンドラ ---
+
+            const handleStart = () => {
+                const firstFormat = schedule[0];
+                if (firstFormat.format === 'Draft') {
+                    createDraftPods();
+                    setView('SEATING');
+                    saveProgress({ view: 'SEATING', formatOrder, players });
+                } else {
+                    setTimeout(() => {
+                        generatePairings();
+                        setView('PAIRINGS');
+                        saveProgress({ view: 'PAIRINGS', formatOrder, players });
+                    }, 0);
+                }
+            };
+
+            const handleSeatingConfirm = () => {
+                generatePairings();
+                setView('PAIRINGS');
+                saveProgress({ view: 'PAIRINGS' });
+            };
+
+            const handleRoundFinish = () => {
+                setView('STANDINGS');
+                saveProgress({ view: 'STANDINGS' });
+            };
+
+            const handleNextRound = () => {
+                const nextR = currentRound + 1;
+                const nextInfo = schedule.find(s => s.globalRound === nextR);
+
+                if (!nextInfo) return;
+
+                setCurrentRound(nextR);
+
+                if (nextInfo.format === 'Draft' && nextInfo.subRound === 1) {
+                    // 新しいドラフトセッション開始 → 席順表示へ
+                    setView('SEATING');
+                    saveProgress({ view: 'SEATING', currentRound: nextR });
+                } else {
+                    // ドラフトのsubRound 2, 3 または構築フォーマット → ペアリング生成
+                    generatePairings(nextR);
+                    setView('PAIRINGS');
+                    saveProgress({ view: 'PAIRINGS', currentRound: nextR });
+                }
+            };
+
+            // ドラフト席順画面に遷移した時にポッドを作成
+            useEffect(() => {
+                if (view === 'SEATING') {
+                    const info = schedule.find(s => s.globalRound === currentRound);
+                    if (info && info.format === 'Draft' && info.subRound === 1) {
+                        if (!draftPods || draftPods.round !== currentRound) {
+                            createDraftPods();
+                        }
+                    }
+                }
+            }, [currentRound, view]);
+
+            // 大会終了・結果保存
+            const handleFinishTournament = () => {
+                const finalStandings = calculateStandings(players, matches);
+                const historyEntry = {
+                    id: Date.now(),
+                    date: new Date().toLocaleString('ja-JP'),
+                    formatOrder: [...formatOrder],
+                    players: players.map(p => ({ id: p.id, name: p.name })),
+                    matches: [...matches],
+                    standings: finalStandings
+                };
+
+                const newHistory = [historyEntry, ...tournamentHistory].slice(0, 20); // 最大20件保存
+                setTournamentHistory(newHistory);
+                localStorage.setItem('mtgTournamentHistory', JSON.stringify(newHistory));
+
+                // 進行状況をクリアして状態をリセット
+                clearProgress();
+                resetTournament();
+            };
+
+            // 大会状態をリセット
+            const resetTournament = () => {
+                setPlayers(DEFAULT_PLAYERS);
+                setMatches([]);
+                setCurrentRound(1);
+                setDraftPods(null);
+                setModalPlayer(null);
+                setViewingHistory(null);
+                setView('SETUP');
+                clearProgress();
+            };
+
+            // 履歴を表示
+            const viewHistory = (historyEntry) => {
+                setViewingHistory(historyEntry);
+                setShowHistoryModal(false);
+            };
+
+            // 履歴から戻る
+            const closeHistoryView = () => {
+                setViewingHistory(null);
+            };
+
+            // 履歴を削除
+            const deleteHistory = (historyId) => {
+                const newHistory = tournamentHistory.filter(h => h.id !== historyId);
+                setTournamentHistory(newHistory);
+                localStorage.setItem('mtgTournamentHistory', JSON.stringify(newHistory));
+            };
+
+
+            // --- UI構築 ---
+
+            // 進行中の大会があるかチェック
+            const hasInProgressTournament = () => {
+                const saved = localStorage.getItem('mtgTournamentProgress');
+                if (saved) {
+                    try {
+                        const progress = JSON.parse(saved);
+                        return progress.view !== 'SETUP';
+                    } catch (e) {
+                        return false;
+                    }
+                }
+                return false;
+            };
+
+            // SETUP画面
+            if (view === 'SETUP') {
+                const inProgressExists = hasInProgressTournament();
+
+                const moveFmt = (idx, dir) => {
+                    const n = [...formatOrder];
+                    if(idx+dir < 0 || idx+dir >= n.length) return;
+                    [n[idx], n[idx+dir]] = [n[idx+dir], n[idx]];
+                    setFormatOrder(n);
+                };
+                // 進行中の大会を再開
+                const resumeTournament = () => {
+                    const saved = localStorage.getItem('mtgTournamentProgress');
+                    if (saved) {
+                        try {
+                            const progress = JSON.parse(saved);
+                            setView(progress.view);
+                            setFormatOrder(progress.formatOrder);
+                            setPlayers(progress.players);
+                            setMatches(progress.matches);
+                            setCurrentRound(progress.currentRound);
+                            setDraftPods(progress.draftPods);
+                        } catch (e) {
+                            console.error('Failed to resume:', e);
+                        }
+                    }
+                };
+
+                // 進行中の大会を破棄
+                const discardTournament = () => {
+                    if (confirm('進行中の大会を破棄しますか？この操作は取り消せません。')) {
+                        clearProgress();
+                        // 状態をリセットして再描画
+                        setPlayers(DEFAULT_PLAYERS);
+                        setMatches([]);
+                        setCurrentRound(1);
+                        setDraftPods(null);
+                    }
+                };
+
+                return (
+                    <div className="max-w-2xl mx-auto p-8 bg-white shadow-lg rounded-xl mt-10">
+                        <h1 className="text-3xl font-bold mb-6 text-gray-800 border-b pb-2">MTG大会管理システム</h1>
+
+                        {/* 進行中の大会がある場合 */}
+                        {inProgressExists && (
+                            <div className="mb-6 p-4 bg-yellow-50 border-2 border-yellow-400 rounded-lg">
+                                <div className="flex items-center justify-between">
+                                    <div>
+                                        <div className="font-bold text-yellow-800">進行中の大会があります</div>
+                                        <div className="text-sm text-yellow-600">前回の続きから再開できます</div>
+                                    </div>
+                                    <div className="flex gap-2">
+                                        <button
+                                            onClick={resumeTournament}
+                                            className="px-4 py-2 bg-green-600 text-white font-bold rounded hover:bg-green-700 transition"
+                                        >
+                                            再開する
+                                        </button>
+                                        <button
+                                            onClick={discardTournament}
+                                            className="px-4 py-2 bg-red-500 text-white font-bold rounded hover:bg-red-600 transition"
+                                        >
+                                            破棄
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        <div className="mb-8">
+                            <h2 className="font-bold text-lg mb-3">フォーマット順序</h2>
+                            <ul className="space-y-2">
+                                {formatOrder.map((fid, i) => (
+                                    <li key={fid} className="flex items-center justify-between bg-gray-50 p-3 rounded border">
+                                        <div className="flex items-center">
+                                            <span className="bg-gradient-to-r from-purple-600 to-indigo-600 text-white w-8 h-8 rounded-full flex items-center justify-center text-sm mr-3 font-bold">{i+1}</span>
+                                            <span className="font-semibold">{FORMAT_DEFINITIONS[fid].name}</span>
+                                            <span className="text-xs text-gray-500 ml-2">({FORMAT_DEFINITIONS[fid].rounds}回戦)</span>
+                                        </div>
+                                        <div>
+                                            <button onClick={()=>moveFmt(i,-1)} className="px-3 py-1 bg-gray-200 hover:bg-gray-300 rounded mr-1">↑</button>
+                                            <button onClick={()=>moveFmt(i,1)} className="px-3 py-1 bg-gray-200 hover:bg-gray-300 rounded">↓</button>
+                                        </div>
+                                    </li>
+                                ))}
+                            </ul>
+                        </div>
+
+                        <div className="mb-8">
+                            <h2 className="font-bold text-lg mb-3">参加者 ({players.length}名)</h2>
+                            <div className="grid grid-cols-2 gap-3">
+                                {players.map((p, i) => (
+                                    <input
+                                        key={p.id}
+                                        className="border-2 border-gray-200 p-2 rounded focus:ring-2 focus:ring-purple-500 focus:border-purple-500 outline-none transition"
+                                        value={p.name}
+                                        placeholder={`プレイヤー ${i + 1}`}
+                                        onChange={(e) => {
+                                            const newP = [...players];
+                                            newP[i].name = e.target.value;
+                                            setPlayers(newP);
+                                        }}
+                                    />
+                                ))}
+                            </div>
+                        </div>
+
+                        <div className="flex gap-4">
+                            <button onClick={handleStart} className="flex-1 py-4 bg-gradient-to-r from-purple-600 to-indigo-600 text-white font-bold text-xl rounded-lg hover:from-purple-700 hover:to-indigo-700 transition shadow-md">
+                                大会を開始する
+                            </button>
+                            {tournamentHistory.length > 0 && (
+                                <button onClick={() => setShowHistoryModal(true)} className="px-6 py-4 bg-gray-600 text-white font-bold text-lg rounded-lg hover:bg-gray-700 transition shadow-md">
+                                    履歴
+                                </button>
+                            )}
+                        </div>
+
+                        {/* 履歴モーダル */}
+                        {showHistoryModal && (
+                            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50" onClick={() => setShowHistoryModal(false)}>
+                                <div className="bg-white rounded-lg p-6 max-w-2xl w-full max-h-[80vh] overflow-y-auto shadow-2xl" onClick={e => e.stopPropagation()}>
+                                    <h2 className="text-2xl font-bold mb-4 border-b pb-2 text-purple-600">過去の大会履歴</h2>
+                                    <div className="space-y-3">
+                                        {tournamentHistory.map(h => (
+                                            <div key={h.id} className="border rounded-lg p-4 hover:bg-purple-50 transition">
+                                                <div className="flex justify-between items-center">
+                                                    <div>
+                                                        <div className="font-bold text-lg">{h.date}</div>
+                                                        <div className="text-sm text-gray-600">
+                                                            優勝: {h.standings[0]?.name} ({h.standings[0]?.matchPoints}pts)
+                                                        </div>
+                                                        <div className="text-xs text-gray-400 mt-1">
+                                                            {h.formatOrder.map(f => FORMAT_DEFINITIONS[f].name).join(' → ')}
+                                                        </div>
+                                                    </div>
+                                                    <div className="flex gap-2">
+                                                        <button
+                                                            onClick={() => viewHistory(h)}
+                                                            className="px-4 py-2 bg-purple-600 text-white rounded hover:bg-purple-700 transition text-sm"
+                                                        >
+                                                            詳細
+                                                        </button>
+                                                        <button
+                                                            onClick={(e) => { e.stopPropagation(); deleteHistory(h.id); }}
+                                                            className="px-3 py-2 bg-red-500 text-white rounded hover:bg-red-600 transition text-sm"
+                                                        >
+                                                            削除
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                    <button onClick={() => setShowHistoryModal(false)} className="mt-6 w-full py-2 bg-gray-600 text-white rounded hover:bg-gray-700 font-medium transition">
+                                        閉じる
+                                    </button>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* 履歴詳細表示 */}
+                        {viewingHistory && (
+                            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50" onClick={closeHistoryView}>
+                                <div className="bg-white rounded-lg p-6 max-w-4xl w-full max-h-[90vh] overflow-y-auto shadow-2xl" onClick={e => e.stopPropagation()}>
+                                    <div className="flex justify-between items-center mb-4 border-b pb-2">
+                                        <h2 className="text-2xl font-bold text-purple-600">{viewingHistory.date} の大会結果</h2>
+                                        <button onClick={closeHistoryView} className="text-gray-500 hover:text-gray-700 text-2xl">&times;</button>
+                                    </div>
+
+                                    <div className="mb-4 text-sm text-gray-600">
+                                        フォーマット: {viewingHistory.formatOrder.map(f => FORMAT_DEFINITIONS[f].name).join(' → ')}
+                                    </div>
+
+                                    <table className="w-full text-sm text-left mb-6">
+                                        <thead className="bg-gradient-to-r from-purple-600 to-indigo-600 text-white">
+                                            <tr>
+                                                <th className="p-3 rounded-tl-lg">#</th>
+                                                <th className="p-3">Name</th>
+                                                <th className="p-3">Pts</th>
+                                                <th className="p-3">OMW%</th>
+                                                <th className="p-3">GW%</th>
+                                                <th className="p-3 rounded-tr-lg">OGW%</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {viewingHistory.standings.map((p, i) => (
+                                                <tr key={p.id} className="border-b hover:bg-purple-50">
+                                                    <td className="p-3 font-bold">{i + 1}</td>
+                                                    <td className="p-3 font-bold">{p.name}</td>
+                                                    <td className="p-3 font-bold">{p.matchPoints}</td>
+                                                    <td className="p-3 text-gray-600">{(p.omw * 100).toFixed(1)}%</td>
+                                                    <td className="p-3 text-gray-600">{(p.gw * 100).toFixed(1)}%</td>
+                                                    <td className="p-3 text-gray-600">{(p.ogw * 100).toFixed(1)}%</td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+
+                                    <h3 className="font-bold text-lg mb-3 text-gray-700">対戦履歴</h3>
+                                    <div className="space-y-2 max-h-60 overflow-y-auto">
+                                        {viewingHistory.matches.filter(m => m.completed).map(m => {
+                                            const p1 = viewingHistory.players.find(p => p.id === m.p1Id);
+                                            const p2 = viewingHistory.players.find(p => p.id === m.p2Id);
+                                            return (
+                                                <div key={m.id} className="flex justify-between items-center text-sm border-b pb-2">
+                                                    <span className="text-purple-500 font-bold">R{m.globalRound} ({FORMAT_DEFINITIONS[m.format].name})</span>
+                                                    <span>{p1?.name} vs {p2?.name}</span>
+                                                    <span className="font-bold">{m.p1Wins}-{m.p2Wins}</span>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+
+                                    <button onClick={closeHistoryView} className="mt-6 w-full py-2 bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded hover:from-purple-700 hover:to-indigo-700 font-medium transition">
+                                        閉じる
+                                    </button>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                );
+            }
+
+            // SEATING画面 (円卓)
+            if (view === 'SEATING') {
+                if (!draftPods) return <div className="flex items-center justify-center h-screen text-white text-xl">Loading Pods...</div>;
+                const isRound1 = currentRound === 1;
+
+                const RoundTable = ({ podPlayers, title, colorClass, label }) => {
+                    const R = 120;
+                    const CX = 160;
+                    const CY = 170;
+
+                    return (
+                        <div className="bg-white rounded-xl shadow-lg border-2 overflow-hidden w-[320px]">
+                            <div className={`p-3 text-center font-bold text-white ${colorClass}`}>
+                                {title}
+                                <div className="text-xs font-normal opacity-90">{label}</div>
+                            </div>
+                            <div className="relative h-[340px]">
+                                <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-40 h-40 rounded-full bg-gray-100 border-4 border-gray-200 flex items-center justify-center">
+                                    <span className="text-gray-300 font-bold text-xl tracking-widest">TABLE</span>
+                                </div>
+                                <svg className="absolute inset-0 w-full h-full pointer-events-none">
+                                    {[0, 1, 2, 3].map(i => {
+                                        const seat1 = i + 1;
+                                        const seat2 = i + 5;
+                                        const rad1 = ((seat1-1) * 45 - 90) * Math.PI / 180;
+                                        const rad2 = ((seat2-1) * 45 - 90) * Math.PI / 180;
+                                        const x1 = CX + Math.cos(rad1) * R;
+                                        const y1 = CY + Math.sin(rad1) * R;
+                                        const x2 = CX + Math.cos(rad2) * R;
+                                        const y2 = CY + Math.sin(rad2) * R;
+                                        return <line key={i} x1={x1} y1={y1} x2={x2} y2={y2} stroke="#ccc" strokeWidth="2" strokeDasharray="4" />;
+                                    })}
+                                </svg>
+                                {podPlayers.map((p, i) => {
+                                    const seat = p.seat;
+                                    const rad = ((seat-1) * 45 - 90) * Math.PI / 180;
+                                    const x = CX + Math.cos(rad) * R;
+                                    const y = CY + Math.sin(rad) * R;
+                                    return (
+                                        <div key={p.id} className="absolute seat-node flex flex-col items-center w-20"
+                                             style={{ left: x - 40, top: y - 25 }}>
+                                            <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-white shadow border-2 border-white mb-1 ${colorClass.replace('bg-', 'bg-opacity-90 bg-')}`}>
+                                                {seat}
+                                            </div>
+                                            <div className="bg-white text-[10px] font-bold px-2 py-0.5 rounded shadow border truncate w-full text-center">
+                                                {p.name}
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    );
+                };
+
+                return (
+                    <div className="max-w-6xl mx-auto p-6 mt-4">
+                        <div className="bg-white rounded-xl shadow-lg p-6 mb-6">
+                            <h1 className="text-2xl font-bold text-center mb-2">ドラフト席順表 (Round {currentRound})</h1>
+                            <p className="text-center text-gray-500 mb-8">点線は1回戦のマッチング（対角線）を表しています</p>
+
+                            <div className="flex flex-wrap justify-center gap-10">
+                                <RoundTable
+                                    podPlayers={draftPods.pods[0]}
+                                    title="Pod A"
+                                    colorClass="bg-gradient-to-r from-purple-600 to-indigo-600"
+                                    label={isRound1 ? "ランダム" : "上位卓 (1st - 8th)"}
+                                />
+                                <RoundTable
+                                    podPlayers={draftPods.pods[1]}
+                                    title="Pod B"
+                                    colorClass="bg-gradient-to-r from-emerald-500 to-teal-600"
+                                    label={isRound1 ? "ランダム" : "下位卓 (9th - 16th)"}
+                                />
+                            </div>
+
+                            <div className="text-center mt-10">
+                                <button onClick={handleSeatingConfirm} className="px-10 py-4 bg-gradient-to-r from-purple-600 to-indigo-600 text-white font-bold rounded-lg shadow hover:from-purple-700 hover:to-indigo-700 transition">
+                                    着席完了・ペアリングへ
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                );
+            }
+
+            // PAIRINGS画面
+            if (view === 'PAIRINGS') {
+                const currentMatches = matches.filter(m => m.globalRound === currentRound);
+                const allCompleted = currentMatches.length > 0 && currentMatches.every(m => m.completed);
+                const isDraft = roundInfo && roundInfo.format === 'Draft';
+
+                const updateScore = (mId, w1, w2, d) => {
+                    setMatches(prev => {
+                        const updatedMatches = prev.map(m => m.id === mId ? { ...m, p1Wins: w1, p2Wins: w2, draws: d, completed: true } : m);
+                        saveProgress({ matches: updatedMatches });
+                        return updatedMatches;
+                    });
+                };
+
+                const MatchRow = ({ match }) => {
+                    const p1 = players.find(p => p.id === match.p1Id) || { name: 'Unknown' };
+                    const p2 = players.find(p => p.id === match.p2Id) || { name: 'Unknown' };
+
+                    let statusClass = "bg-gray-100 text-gray-500";
+                    if(match.completed) {
+                        if(match.p1Wins > match.p2Wins) { statusClass = "bg-blue-100 text-blue-700 border-blue-200"; }
+                        else if(match.p2Wins > match.p1Wins) { statusClass = "bg-red-100 text-red-700 border-red-200"; }
+                        else { statusClass = "bg-yellow-100 text-yellow-700 border-yellow-200"; }
+                    }
+
+                    return (
+                        <div className={`border-2 rounded-lg p-4 mb-3 ${match.completed ? 'bg-white border-gray-200' : 'bg-red-50 border-red-300'}`}>
+                            <div className="flex justify-between items-center mb-3">
+                                <div className="w-5/12 font-bold truncate text-lg">{p1.name}</div>
+                                <div className={`w-2/12 text-center text-sm px-2 py-1 rounded border ${statusClass}`}>
+                                    {match.completed ? `${match.p1Wins}-${match.p2Wins}` : '-'}
+                                </div>
+                                <div className="w-5/12 font-bold truncate text-right text-lg">{p2.name}</div>
+                            </div>
+                            <div className="flex justify-center gap-2 flex-wrap">
+                                <button onClick={()=>updateScore(match.id, 2, 0, 0)} className="px-3 py-2 bg-gradient-to-r from-blue-500 to-blue-600 text-white text-sm rounded hover:from-blue-600 hover:to-blue-700 font-medium">2-0</button>
+                                <button onClick={()=>updateScore(match.id, 2, 1, 0)} className="px-3 py-2 bg-gradient-to-r from-blue-400 to-blue-500 text-white text-sm rounded hover:from-blue-500 hover:to-blue-600 font-medium">2-1</button>
+                                <button onClick={()=>updateScore(match.id, 1, 1, 1)} className="px-3 py-2 bg-gradient-to-r from-yellow-400 to-orange-500 text-white text-sm rounded hover:from-yellow-500 hover:to-orange-600 font-medium">1-1-1</button>
+                                <button onClick={()=>updateScore(match.id, 1, 2, 0)} className="px-3 py-2 bg-gradient-to-r from-red-400 to-red-500 text-white text-sm rounded hover:from-red-500 hover:to-red-600 font-medium">1-2</button>
+                                <button onClick={()=>updateScore(match.id, 0, 2, 0)} className="px-3 py-2 bg-gradient-to-r from-red-500 to-red-600 text-white text-sm rounded hover:from-red-600 hover:to-red-700 font-medium">0-2</button>
+                            </div>
+                        </div>
+                    );
+                };
+
+                let groups = [{ title: '', matches: currentMatches }];
+                if (isDraft && draftPods && roundInfo) {
+                    // 現在のドラフトセッションの開始ラウンド（subRound 1のラウンド）を計算
+                    const draftStartRound = currentRound - roundInfo.subRound + 1;
+                    if (draftPods.round === draftStartRound) {
+                        const podAIds = draftPods.pods[0].map(p => p.id);
+                        const podBIds = draftPods.pods[1].map(p => p.id);
+                        groups = [
+                            { title: 'Pod A', matches: currentMatches.filter(m => podAIds.includes(m.p1Id)), color: 'border-l-4 border-purple-500 pl-4' },
+                            { title: 'Pod B', matches: currentMatches.filter(m => podBIds.includes(m.p1Id)), color: 'border-l-4 border-emerald-500 pl-4' }
+                        ];
+                    }
+                }
+
+                return (
+                    <div className="max-w-3xl mx-auto p-6 mt-4">
+                        <div className="bg-white shadow-lg rounded-xl overflow-hidden">
+                            <div className="bg-gradient-to-r from-purple-600 to-indigo-600 text-white p-4">
+                                <div className="flex justify-between items-center">
+                                    <div>
+                                        <h1 className="text-2xl font-bold">Round {currentRound}: {roundInfo ? FORMAT_DEFINITIONS[roundInfo.format].name : ''}</h1>
+                                        <span className="text-purple-200 text-sm">Sub-round {roundInfo ? roundInfo.subRound : 0} / {roundInfo ? FORMAT_DEFINITIONS[roundInfo.format].rounds : 0}</span>
+                                    </div>
+                                    <span className="bg-white/20 px-3 py-1 rounded text-sm font-bold">BO3</span>
+                                </div>
+                            </div>
+
+                            <div className="p-6">
+                                {groups.map((g, i) => (
+                                    <div key={i} className={`mb-6 ${g.color || ''}`}>
+                                        {g.title && <h3 className="font-bold text-lg mb-3 text-gray-700">{g.title}</h3>}
+                                        {g.matches.map(m => <MatchRow key={m.id} match={m} />)}
+                                    </div>
+                                ))}
+
+                                <button
+                                    disabled={!allCompleted}
+                                    onClick={handleRoundFinish}
+                                    className={`w-full py-4 rounded-lg font-bold text-lg transition ${allCompleted ? 'bg-gradient-to-r from-purple-600 to-indigo-600 text-white hover:from-purple-700 hover:to-indigo-700 shadow' : 'bg-gray-300 text-gray-500 cursor-not-allowed'}`}
+                                >
+                                    {allCompleted ? 'ラウンド終了・順位表へ' : '全試合の結果を入力してください'}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                );
+            }
+
+            // STANDINGS画面
+            if (view === 'STANDINGS') {
+                // 次のラウンドがあるかチェック
+                const nextRoundExists = schedule.find(s => s.globalRound === currentRound + 1);
+
+                return (
+                    <div className="max-w-5xl mx-auto p-6 mt-4">
+                        <div className="bg-white shadow-lg rounded-xl overflow-hidden">
+                            <div className="bg-gradient-to-r from-purple-600 to-indigo-600 text-white p-4">
+                                <div className="flex justify-between items-center">
+                                    <h1 className="text-2xl font-bold">
+                                        {nextRoundExists ? `順位表 (After Round ${currentRound})` : '最終結果'}
+                                    </h1>
+                                    {nextRoundExists ? (
+                                        <button onClick={handleNextRound} className="bg-white text-purple-600 px-6 py-2 rounded font-bold hover:bg-purple-50 shadow transition">
+                                            次のラウンドへ
+                                        </button>
+                                    ) : (
+                                        <button onClick={handleFinishTournament} className="bg-yellow-400 text-yellow-900 px-6 py-2 rounded font-bold hover:bg-yellow-500 shadow transition">
+                                            大会を終了する
+                                        </button>
+                                    )}
+                                </div>
+                            </div>
+
+                            <div className="p-6 overflow-x-auto">
+                                <table className="w-full text-sm text-left">
+                                    <thead className="bg-gradient-to-r from-purple-600 to-indigo-600 text-white">
+                                        <tr>
+                                            <th className="p-3 rounded-tl-lg">#</th>
+                                            <th className="p-3">Name</th>
+                                            <th className="p-3">Pts</th>
+                                            <th className="p-3">OMW%</th>
+                                            <th className="p-3">GW%</th>
+                                            <th className="p-3 rounded-tr-lg">OGW%</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {standings.map((p, i) => (
+                                            <tr key={p.id} className="border-b hover:bg-purple-50 transition">
+                                                <td className="p-3 font-bold">{i + 1}</td>
+                                                <td className="p-3">
+                                                    <button onClick={()=>setModalPlayer(p)} className="text-purple-600 font-bold hover:underline">{p.name}</button>
+                                                </td>
+                                                <td className="p-3 font-bold text-base">{p.matchPoints}</td>
+                                                <td className="p-3 text-gray-600">{(p.omw * 100).toFixed(1)}%</td>
+                                                <td className="p-3 text-gray-600">{(p.gw * 100).toFixed(1)}%</td>
+                                                <td className="p-3 text-gray-600">{(p.ogw * 100).toFixed(1)}%</td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+
+                        {/* モーダル */}
+                        {modalPlayer && (
+                            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50" onClick={()=>setModalPlayer(null)}>
+                                <div className="bg-white rounded-lg p-6 max-w-md w-full shadow-2xl" onClick={e=>e.stopPropagation()}>
+                                    <h2 className="text-xl font-bold mb-4 border-b pb-2 text-purple-600">{modalPlayer.name} の対戦履歴</h2>
+                                    <div className="space-y-2 max-h-80 overflow-y-auto">
+                                        {matches.filter(m => (m.p1Id === modalPlayer.id || m.p2Id === modalPlayer.id) && m.completed).map(m => {
+                                            const isP1 = m.p1Id === modalPlayer.id;
+                                            const oppId = isP1 ? m.p2Id : m.p1Id;
+                                            const opp = players.find(p => p.id === oppId);
+                                            const myWins = isP1 ? m.p1Wins : m.p2Wins;
+                                            const oppWins = isP1 ? m.p2Wins : m.p1Wins;
+                                            let res = "Draw";
+                                            let color = "text-yellow-600";
+                                            if(myWins > oppWins) { res = "Win"; color = "text-green-600 font-bold"; }
+                                            if(oppWins > myWins) { res = "Loss"; color = "text-red-600"; }
+
+                                            return (
+                                                <div key={m.id} className="flex justify-between items-center text-sm border-b pb-2">
+                                                    <div>
+                                                        <span className="font-bold text-purple-500 mr-2">R{m.globalRound} ({FORMAT_DEFINITIONS[m.format].name})</span>
+                                                        <span>vs {opp ? opp.name : 'Unknown'}</span>
+                                                    </div>
+                                                    <div className={color}>{res} {myWins}-{oppWins}</div>
+                                                </div>
+                                            );
+                                        })}
+                                        {matches.filter(m => (m.p1Id === modalPlayer.id || m.p2Id === modalPlayer.id) && m.completed).length === 0 && (
+                                            <div className="text-center text-gray-400 py-4">履歴なし</div>
+                                        )}
+                                    </div>
+                                    <button onClick={()=>setModalPlayer(null)} className="mt-6 w-full py-2 bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded hover:from-purple-700 hover:to-indigo-700 font-medium transition">閉じる</button>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                );
+            }
+
+            return <div className="flex items-center justify-center h-screen text-white text-xl">Loading...</div>;
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
 </body>
 </html>
