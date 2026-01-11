@@ -492,6 +492,19 @@
                 localStorage.setItem('mtgTournamentHistory', JSON.stringify(newHistory));
             };
 
+            // 大会を取消（全情報を削除してトップに戻る）
+            const handleCancelTournament = () => {
+                if (confirm('大会を取消しますか？\n\n登録情報（プレイヤー名、フォーマット順序）と全ての対戦結果が削除されます。\nこの操作は取り消せません。')) {
+                    clearProgress();
+                    setPlayers(DEFAULT_PLAYERS);
+                    setMatches([]);
+                    setCurrentRound(1);
+                    setDraftPods(null);
+                    setModalPlayer(null);
+                    setView('SETUP');
+                }
+            };
+
 
             // --- UI構築 ---
 
@@ -810,9 +823,12 @@
                                 />
                             </div>
 
-                            <div className="text-center mt-10">
+                            <div className="flex justify-center gap-4 mt-10">
                                 <button onClick={handleSeatingConfirm} className="px-10 py-4 bg-gradient-to-r from-purple-600 to-indigo-600 text-white font-bold rounded-lg shadow hover:from-purple-700 hover:to-indigo-700 transition">
                                     着席完了・ペアリングへ
+                                </button>
+                                <button onClick={handleCancelTournament} className="px-6 py-4 bg-red-500 text-white font-bold rounded-lg shadow hover:bg-red-600 transition">
+                                    大会を取消
                                 </button>
                             </div>
                         </div>
@@ -900,13 +916,21 @@
                                     </div>
                                 ))}
 
-                                <button
-                                    disabled={!allCompleted}
-                                    onClick={handleRoundFinish}
-                                    className={`w-full py-4 rounded-lg font-bold text-lg transition ${allCompleted ? 'bg-gradient-to-r from-purple-600 to-indigo-600 text-white hover:from-purple-700 hover:to-indigo-700 shadow' : 'bg-gray-300 text-gray-500 cursor-not-allowed'}`}
-                                >
-                                    {allCompleted ? 'ラウンド終了・順位表へ' : '全試合の結果を入力してください'}
-                                </button>
+                                <div className="flex gap-4">
+                                    <button
+                                        disabled={!allCompleted}
+                                        onClick={handleRoundFinish}
+                                        className={`flex-1 py-4 rounded-lg font-bold text-lg transition ${allCompleted ? 'bg-gradient-to-r from-purple-600 to-indigo-600 text-white hover:from-purple-700 hover:to-indigo-700 shadow' : 'bg-gray-300 text-gray-500 cursor-not-allowed'}`}
+                                    >
+                                        {allCompleted ? 'ラウンド終了・順位表へ' : '全試合の結果を入力してください'}
+                                    </button>
+                                    <button
+                                        onClick={handleCancelTournament}
+                                        className="px-6 py-4 bg-red-500 text-white font-bold rounded-lg shadow hover:bg-red-600 transition"
+                                    >
+                                        大会を取消
+                                    </button>
+                                </div>
                             </div>
                         </div>
                     </div>
