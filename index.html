@@ -812,22 +812,22 @@
                                 <RoundTable
                                     podPlayers={draftPods.pods[0]}
                                     title="Pod A"
-                                    colorClass="bg-gradient-to-r from-emerald-600 to-teal-600"
-                                    label={isRound1 ? "ランダム" : "上位卓 (1st - 8th)"}
+                                    colorClass="bg-gradient-to-r from-red-600 to-red-700"
+                                    label={isRound1 ? "" : "上位卓 (1st - 8th)"}
                                 />
                                 <RoundTable
                                     podPlayers={draftPods.pods[1]}
                                     title="Pod B"
-                                    colorClass="bg-gradient-to-r from-emerald-500 to-teal-600"
-                                    label={isRound1 ? "ランダム" : "下位卓 (9th - 16th)"}
+                                    colorClass="bg-gradient-to-r from-blue-600 to-blue-700"
+                                    label={isRound1 ? "" : "下位卓 (9th - 16th)"}
                                 />
                             </div>
 
                             <div className="flex justify-center gap-4 mt-10">
-                                <button onClick={handleSeatingConfirm} className="px-10 py-4 bg-gradient-to-r from-emerald-600 to-teal-600 text-white font-bold rounded-lg shadow hover:from-emerald-700 hover:to-teal-700 transition">
+                                <button onClick={handleSeatingConfirm} className="px-10 py-4 bg-gray-700 text-white font-bold rounded-lg shadow hover:bg-gray-800 transition">
                                     着席完了・ペアリングへ
                                 </button>
-                                <button onClick={handleCancelTournament} className="px-6 py-4 bg-red-500 text-white font-bold rounded-lg shadow hover:bg-red-600 transition">
+                                <button onClick={handleCancelTournament} className="px-6 py-4 bg-gray-500 text-white font-bold rounded-lg shadow hover:bg-gray-600 transition">
                                     大会を取消
                                 </button>
                             </div>
@@ -855,27 +855,40 @@
                     const p2 = players.find(p => p.id === match.p2Id) || { name: 'Unknown' };
 
                     let statusClass = "bg-gray-100 text-gray-500";
+                    let p1NameClass = "w-5/12 font-bold truncate text-lg px-2 py-1 rounded";
+                    let p2NameClass = "w-5/12 font-bold truncate text-right text-lg px-2 py-1 rounded";
+
                     if(match.completed) {
-                        if(match.p1Wins > match.p2Wins) { statusClass = "bg-blue-100 text-blue-700 border-blue-200"; }
-                        else if(match.p2Wins > match.p1Wins) { statusClass = "bg-red-100 text-red-700 border-red-200"; }
-                        else { statusClass = "bg-yellow-100 text-yellow-700 border-yellow-200"; }
+                        if(match.p1Wins > match.p2Wins) {
+                            statusClass = "bg-blue-100 text-blue-700 border-blue-200";
+                            p1NameClass += " bg-blue-100 text-blue-700";
+                        }
+                        else if(match.p2Wins > match.p1Wins) {
+                            statusClass = "bg-blue-100 text-blue-700 border-blue-200";
+                            p2NameClass += " bg-blue-100 text-blue-700";
+                        }
+                        else {
+                            statusClass = "bg-yellow-100 text-yellow-700 border-yellow-200";
+                            p1NameClass += " bg-yellow-100 text-yellow-700";
+                            p2NameClass += " bg-yellow-100 text-yellow-700";
+                        }
                     }
 
                     return (
-                        <div className={`border-2 rounded-lg p-4 mb-3 ${match.completed ? 'bg-white border-gray-200' : 'bg-red-50 border-red-300'}`}>
+                        <div className={`border-2 rounded-lg p-4 mb-3 ${match.completed ? 'bg-white border-gray-200' : 'bg-gray-100 border-gray-300'}`}>
                             <div className="flex justify-between items-center mb-3">
-                                <div className="w-5/12 font-bold truncate text-lg">{p1.name}</div>
+                                <div className={p1NameClass}>{p1.name}</div>
                                 <div className={`w-2/12 text-center text-sm px-2 py-1 rounded border ${statusClass}`}>
                                     {match.completed ? `${match.p1Wins}-${match.p2Wins}` : '-'}
                                 </div>
-                                <div className="w-5/12 font-bold truncate text-right text-lg">{p2.name}</div>
+                                <div className={p2NameClass}>{p2.name}</div>
                             </div>
                             <div className="flex justify-center gap-2 flex-wrap">
-                                <button onClick={()=>updateScore(match.id, 2, 0, 0)} className="px-3 py-2 bg-gradient-to-r from-blue-500 to-blue-600 text-white text-sm rounded hover:from-blue-600 hover:to-blue-700 font-medium">2-0</button>
-                                <button onClick={()=>updateScore(match.id, 2, 1, 0)} className="px-3 py-2 bg-gradient-to-r from-blue-400 to-blue-500 text-white text-sm rounded hover:from-blue-500 hover:to-blue-600 font-medium">2-1</button>
-                                <button onClick={()=>updateScore(match.id, 1, 1, 1)} className="px-3 py-2 bg-gradient-to-r from-yellow-400 to-orange-500 text-white text-sm rounded hover:from-yellow-500 hover:to-orange-600 font-medium">1-1-1</button>
-                                <button onClick={()=>updateScore(match.id, 1, 2, 0)} className="px-3 py-2 bg-gradient-to-r from-red-400 to-red-500 text-white text-sm rounded hover:from-red-500 hover:to-red-600 font-medium">1-2</button>
-                                <button onClick={()=>updateScore(match.id, 0, 2, 0)} className="px-3 py-2 bg-gradient-to-r from-red-500 to-red-600 text-white text-sm rounded hover:from-red-600 hover:to-red-700 font-medium">0-2</button>
+                                <button onClick={()=>updateScore(match.id, 2, 0, 0)} className="px-3 py-2 bg-gray-400 text-white text-sm rounded hover:bg-blue-500 font-medium">2-0</button>
+                                <button onClick={()=>updateScore(match.id, 2, 1, 0)} className="px-3 py-2 bg-gray-400 text-white text-sm rounded hover:bg-blue-500 font-medium">2-1</button>
+                                <button onClick={()=>updateScore(match.id, 1, 1, 1)} className="px-3 py-2 bg-gray-400 text-white text-sm rounded hover:bg-yellow-500 font-medium">DRAW</button>
+                                <button onClick={()=>updateScore(match.id, 1, 2, 0)} className="px-3 py-2 bg-gray-400 text-white text-sm rounded hover:bg-red-500 font-medium">1-2</button>
+                                <button onClick={()=>updateScore(match.id, 0, 2, 0)} className="px-3 py-2 bg-gray-400 text-white text-sm rounded hover:bg-red-500 font-medium">0-2</button>
                             </div>
                         </div>
                     );
@@ -889,8 +902,8 @@
                         const podAIds = draftPods.pods[0].map(p => p.id);
                         const podBIds = draftPods.pods[1].map(p => p.id);
                         groups = [
-                            { title: 'Pod A', matches: currentMatches.filter(m => podAIds.includes(m.p1Id)), color: 'border-l-4 border-emerald-500 pl-4' },
-                            { title: 'Pod B', matches: currentMatches.filter(m => podBIds.includes(m.p1Id)), color: 'border-l-4 border-emerald-500 pl-4' }
+                            { title: 'Pod A', matches: currentMatches.filter(m => podAIds.includes(m.p1Id)), color: 'border-l-4 border-red-600 pl-4' },
+                            { title: 'Pod B', matches: currentMatches.filter(m => podBIds.includes(m.p1Id)), color: 'border-l-4 border-blue-600 pl-4' }
                         ];
                     }
                 }
@@ -920,13 +933,13 @@
                                     <button
                                         disabled={!allCompleted}
                                         onClick={handleRoundFinish}
-                                        className={`flex-1 py-4 rounded-lg font-bold text-lg transition ${allCompleted ? 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white hover:from-emerald-700 hover:to-teal-700 shadow' : 'bg-gray-300 text-gray-500 cursor-not-allowed'}`}
+                                        className={`flex-1 py-4 rounded-lg font-bold text-lg transition ${allCompleted ? 'bg-gray-700 text-white hover:bg-gray-800 shadow' : 'bg-gray-300 text-gray-500 cursor-not-allowed'}`}
                                     >
                                         {allCompleted ? 'ラウンド終了・順位表へ' : '全試合の結果を入力してください'}
                                     </button>
                                     <button
                                         onClick={handleCancelTournament}
-                                        className="px-6 py-4 bg-red-500 text-white font-bold rounded-lg shadow hover:bg-red-600 transition"
+                                        className="px-6 py-4 bg-gray-500 text-white font-bold rounded-lg shadow hover:bg-gray-600 transition"
                                     >
                                         大会を取消
                                     </button>
@@ -1006,7 +1019,7 @@
                                             const oppWins = isP1 ? m.p2Wins : m.p1Wins;
                                             let res = "Draw";
                                             let color = "text-yellow-600";
-                                            if(myWins > oppWins) { res = "Win"; color = "text-green-600 font-bold"; }
+                                            if(myWins > oppWins) { res = "Win"; color = "text-blue-600 font-bold"; }
                                             if(oppWins > myWins) { res = "Loss"; color = "text-red-600"; }
 
                                             return (
